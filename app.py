@@ -91,7 +91,7 @@ if submit:
         with st.spinner("Rakip davranışları analiz ediliyor..."):
             
             # --- YAPAY ZEKA (DENETÇİ MODU) ---
-            model = genai.GenerativeModel('gemini-pro')
+           model = genai.GenerativeModel('gemini-1.5-flash')
             prompt = f"""
             SEN ACIMASIZ BİR 'DAVRANIŞ DENETÇİSİSİN'. KOÇ DEĞİLSİN.
             Kullanıcı: {my_user}
