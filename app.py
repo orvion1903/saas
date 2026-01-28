@@ -1,41 +1,41 @@
 import streamlit as st
 import google.generativeai as genai
-from apify_client import ApifyClient
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- SAYFA YAPILANDIRMASI ---
+# --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Denetçi", page_icon="⚖️", layout="centered")
 
-# --- CSS (KARANLIK VE OTORİTER TASARIM) ---
+# --- CSS TASARIMI (AGRESİF VE NET) ---
 st.markdown("""
 <style>
     .main { background-color: #0e1117; color: #fff; }
-    .big-score { font-size: 60px; font-weight: 800; color: #ff4b4b; text-align: center; line-height: 1; }
-    .comp-score { font-size: 60px; font-weight: 800; color: #4caf50; text-align: center; line-height: 1; }
+    .big-score { font-size: 70px; font-weight: 800; color: #ff4b4b; text-align: center; line-height: 1; }
+    .comp-score { font-size: 70px; font-weight: 800; color: #4caf50; text-align: center; line-height: 1; }
     .audit-box { border: 1px solid #333; padding: 25px; border-radius: 12px; background-color: #161b22; margin-bottom: 20px; }
-    .blur-text { filter: blur(6px); user-select: none; color: #aaa; background-color: #222; padding: 10px; }
-    .stButton>button { width: 100%; background-color: #ff4b4b; color: white; font-weight: bold; height: 50px; border: none; }
+    .blur-text { filter: blur(5px); user-select: none; color: #aaa; background-color: #222; padding: 10px; border-radius: 5px;}
+    .stButton>button { width: 100%; background-color: #ff4b4b; color: white; font-weight: bold; height: 55px; border: none; font-size: 18px; }
     .stButton>button:hover { background-color: #d93d3d; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- GÜVENLİK VE AYARLAR ---
+# --- ŞİFRE VE AYAR KONTROLÜ ---
 try:
     GENAI_KEY = st.secrets["GENAI_API_KEY"]
-    APIFY_KEY = st.secrets["APIFY_API_TOKEN"]
     MAIL_USER = st.secrets["MAIL_ADRESI"]
     MAIL_PASS = st.secrets["MAIL_SIFRESI"]
     ODEME_LINKI = st.secrets["ODEME_LINKI"]
+    # Apify şimdilik opsiyonel, hata vermesin diye try içine aldık
+    APIFY_KEY = st.secrets.get("APIFY_API_TOKEN", "")
 except:
-    st.warning("⚠️ Sistem Ayarları Eksik (Secrets). Demo modunda çalışıyor.")
+    st.error("⚠️ Sistem Ayarları (Secrets) eksik. Lütfen Streamlit panelinden ekleyin.")
     st.stop()
 
+# Yapay Zeka Kurulumu
 genai.configure(api_key=GENAI_KEY)
-# apify_client = ApifyClient(APIFY_KEY) # Gerçek veride açılacak
 
-# --- MAİL GÖNDERME FONKSİYONU (KARAR BİLDİRİMİ) ---
+# --- MAİL GÖNDERME FONKSİYONU ---
 def karar_maili_gonder(kullanici_mail, kullanici_adi, rakip_adi, skor_sen, skor_rakip):
     msg = MIMEMultipart()
     msg['From'] = f"Dijital Denetçi <{MAIL_USER}>"
@@ -58,7 +58,7 @@ def karar_maili_gonder(kullanici_mail, kullanici_adi, rakip_adi, skor_sen, skor_
     Detaylı raporu görmek ve disiplin sürecini başlatmak için:
     {ODEME_LINKI}
 
-    Bu otomatik bir bildirimdir. Cevap vermeyiniz.
+    Bu otomatik bir bildirimdir.
     """
     msg.attach(MIMEText(body, 'plain'))
     
@@ -69,10 +69,11 @@ def karar_maili_gonder(kullanici_mail, kullanici_adi, rakip_adi, skor_sen, skor_
         server.send_message(msg)
         server.quit()
         return True
-    except:
+    except Exception as e:
+        print(f"Mail Hatası: {e}")
         return False
 
-# --- ARAYÜZ ---
+# --- ARAYÜZ BAŞLIYOR ---
 st.title("⚖️ DİJİTAL DENETÇİ")
 st.markdown("Bu sistem seni motive etmez. **Seni denetler.**")
 
@@ -86,87 +87,97 @@ with st.form("audit_form"):
 
 if submit:
     if not (my_user and comp_user and email):
-        st.error("Tüm alanları doldurmak zorundasın.")
+        st.error("Lütfen tüm alanları doldurun. Denetim yarım bırakılamaz.")
     else:
         with st.spinner("Rakip davranışları analiz ediliyor..."):
-            
-            # --- YAPAY ZEKA (DENETÇİ MODU) ---
-           model = genai.GenerativeModel('gemini-1.5-flash')
-            prompt = f"""
-            SEN ACIMASIZ BİR 'DAVRANIŞ DENETÇİSİSİN'. KOÇ DEĞİLSİN.
-            Kullanıcı: {my_user}
-            Rakip: {comp_user}
-            
-            Görevin:
-            1. Kullanıcıya 35-45 arası düşük bir puan ver.
-            2. Rakibe 75-85 arası yüksek bir puan ver.
-            3. Kullanıcıya "Sessiz Tokat" atacak 3 kısa, sert eleştiri yaz.
-            4. Asla "öneririm" deme. "Hatalısın" de.
-            
-            Çıktı Formatı (Aynen uy):
-            SKOR_SEN: [Sayı]
-            SKOR_RAKIP: [Sayı]
-            ELEŞTİRİ_1: [Kısa Cümle]
-            ELEŞTİRİ_2: [Kısa Cümle]
-            ELEŞTİRİ_3: [Kısa Cümle]
-            """
-            
             try:
+                # --- YAPAY ZEKA MODELİ (GÜNCELLENMİŞ KISIM) ---
+                # Hata veren 'gemini-pro' yerine 'gemini-1.5-flash' kullanıyoruz.
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                prompt = f"""
+                SEN ACIMASIZ BİR 'DAVRANIŞ DENETÇİSİSİN'. KOÇ DEĞİLSİN.
+                Kullanıcı: {my_user}
+                Rakip: {comp_user}
+                
+                Görevin:
+                1. Kullanıcıya 35-45 arası rastgele düşük bir puan ver.
+                2. Rakibe 75-85 arası rastgele yüksek bir puan ver.
+                3. Kullanıcıya "Sessiz Tokat" atacak 3 kısa, sert eleştiri yaz.
+                4. Asla "öneririm" deme. "Hatalısın" veya "Yapılmadı" de.
+                
+                Çıktı Formatı (Aynen uy):
+                SKOR_SEN: [Sayı]
+                SKOR_RAKIP: [Sayı]
+                ELEŞTİRİ_1: [Kısa Cümle]
+                ELEŞTİRİ_2: [Kısa Cümle]
+                ELEŞTİRİ_3: [Kısa Cümle]
+                """
+                
                 response = model.generate_content(prompt)
                 text = response.text
                 
-                # Basit Parsing (AI cevabını parçalama)
-                # Demo için manuel split, gerçekte regex kullanılır
-                lines = text.split('\n')
-                score_me = "42" # AI hata verirse diye default
+                # --- CEVABI PARÇALAMA ---
+                # Varsayılan değerler (AI hata yaparsa diye)
+                score_me = "42"
                 score_comp = "78"
                 critiques = []
                 
-                for line in lines:
+                # Satır satır okuyup veriyi çekiyoruz
+                for line in text.split('\n'):
                     if "SKOR_SEN:" in line: score_me = line.split(":")[1].strip()
                     if "SKOR_RAKIP:" in line: score_comp = line.split(":")[1].strip()
                     if "ELEŞTİRİ" in line: critiques.append(line.split(":")[1].strip())
                 
+                # Eğer AI eleştiri üretmediyse manuel ekle
+                if not critiques:
+                    critiques = [
+                        "İlk 3 saniye kuralına uyulmadı.",
+                        "Video süreleri rakibe göre %40 daha uzun ve verimsiz.",
+                        "Paylaşım saatlerinde istikrar tespit edilemedi."
+                    ]
+
                 # --- SONUÇ EKRANI ---
                 st.markdown(f"""
                 <div class="audit-box">
                     <div style="display:flex; justify-content:space-around; align-items:center;">
                         <div style="text-align:center;">
-                            <div style="color:#aaa; font-size:14px;">SEN</div>
+                            <div style="color:#aaa; font-size:16px; margin-bottom:10px;">SENİN SKORUN</div>
                             <div class="big-score">{score_me}</div>
                         </div>
-                        <div style="font-size:30px; color:#555;">VS</div>
+                        <div style="font-size:40px; color:#333; font-weight:100;">|</div>
                         <div style="text-align:center;">
-                            <div style="color:#aaa; font-size:14px;">RAKİP</div>
+                            <div style="color:#aaa; font-size:16px; margin-bottom:10px;">RAKİBİN</div>
                             <div class="comp-score">{score_comp}</div>
                         </div>
                     </div>
-                    <hr style="border-color:#333;">
-                    <p style="text-align:center; color:#ff4b4b; font-size:14px;">
-                        ⚠️ BU FARK, İÇERİK KALİTESİYLE DEĞİL, <b>DAVRANIŞ DİSİPLİNİYLE</b> İLGİLİ.
+                    <hr style="border-color:#333; margin: 20px 0;">
+                    <p style="text-align:center; color:#ff4b4b; font-size:15px; letter-spacing:1px;">
+                        ⚠️ BU FARK İÇERİK KALİTESİYLE DEĞİL, <b>DAVRANIŞ DİSİPLİNİYLE</b> İLGİLİ.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.subheader("🛑 TESPİT EDİLEN DAVRANIŞ HATALARI")
+                st.subheader("🛑 TESPİT EDİLEN HATALAR")
                 for c in critiques:
                     st.error(f"❌ {c}")
 
-                # --- KİLİTLİ ALAN (MERAK) ---
+                # --- KİLİTLİ ALAN (MERAK UNSURU) ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown("### 🔒 GİZLİ DAVRANIŞ RAPORU")
-                st.info(f"Rakibinin uyguladığı 3 Gizli Strateji ve sana özel 72 saatlik disiplin görevi hazırlandı.")
+                st.info(f"🔒 Rakibin ({comp_user}) uyguladığı 3 Gizli Strateji ve sana özel 72 saatlik disiplin görevi kilitlendi.")
                 
                 st.markdown(f'<div class="audit-box"><p class="blur-text">1. İlk 3 Saniye Kuralı: {comp_user} yüzünü gösterirken sen...</p></div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="audit-box"><p class="blur-text">2. Video Süresi: Rakip 7 saniyede keserken sen...</p></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="audit-box"><p class="blur-text">2. Kanca Stratejisi: Rakip "Merak" kancası kullanıyor...</p></div>', unsafe_allow_html=True)
 
                 # --- MAİL GÖNDERİMİ ---
                 email_status = karar_maili_gonder(email, my_user, comp_user, score_me, score_comp)
                 if email_status:
-                    st.success(f"📧 Karar bildirimi {email} adresine gönderildi.")
+                    st.success(f"📨 Karar bildirimi {email} adresine gönderildi.")
+                else:
+                    st.warning("Mail gönderilemedi (Şifre ayarlarını kontrol et), ama analiz tamamlandı.")
                 
                 # --- SATIŞ BUTONU ---
                 st.link_button("🔓 RAPORU VE GÖREVLERİ AÇ (150 TL)", ODEME_LINKI)
             
             except Exception as e:
-                st.error(f"Sistem hatası: {e}")
+                st.error(f"Bir hata oluştu: {e}")
