@@ -1,14 +1,15 @@
 import streamlit as st
 import google.generativeai as genai
-from apify_client import ApifyClient
+# from apify_client import ApifyClient # Apify şimdilik kapalı, demo veri ile hızlı test edelim
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import time
 
-# --- SAYFA YAPILANDIRMASI ---
+# --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Denetçi", page_icon="⚖️", layout="centered")
 
-# --- CSS (KARANLIK VE OTORİTER TASARIM) ---
+# --- CSS TASARIM ---
 st.markdown("""
 <style>
     .main { background-color: #0e1117; color: #fff; }
@@ -21,18 +22,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- GÜVENLİK VE AYARLAR ---
+# --- AYARLARI ÇEKME ---
 try:
     GENAI_KEY = st.secrets["GENAI_API_KEY"]
-    APIFY_KEY = st.secrets["APIFY_API_TOKEN"]
     MAIL_USER = st.secrets["MAIL_ADRESI"]
     MAIL_PASS = st.secrets["MAIL_SIFRESI"]
     ODEME_LINKI = st.secrets["ODEME_LINKI"]
 except:
-    st.warning("⚠️ Sistem Ayarları Eksik (Secrets). Lütfen Streamlit panelinden şifreleri girin.")
+    st.error("⚠️ Ayarlar eksik! Lütfen Streamlit Secrets panelinden API anahtarlarını giriniz.")
     st.stop()
 
-# Gemini Ayarı (Yeni Model)
+# Gemini Başlat
 genai.configure(api_key=GENAI_KEY)
 
 # --- MAİL GÖNDERME FONKSİYONU ---
@@ -69,7 +69,8 @@ def karar_maili_gonder(kullanici_mail, kullanici_adi, rakip_adi, skor_sen, skor_
         server.send_message(msg)
         server.quit()
         return True
-    except:
+    except Exception as e:
+        print(f"Mail Hatası: {e}")
         return False
 
 # --- ARAYÜZ ---
@@ -86,48 +87,49 @@ with st.form("audit_form"):
 
 if submit:
     if not (my_user and comp_user and email):
-        st.error("Tüm alanları doldurmak zorundasın.")
+        st.warning("Lütfen tüm alanları doldurun.")
     else:
         with st.spinner("Rakip davranışları analiz ediliyor..."):
             
-            # --- YAPAY ZEKA (DENETÇİ MODU - GEMINI 1.5 FLASH) ---
-            # Not: Burada 'gemini-1.5-flash' modelini kullanıyoruz.
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            prompt = f"""
-            SEN ACIMASIZ BİR 'DAVRANIŞ DENETÇİSİSİN'. KOÇ DEĞİLSİN.
-            Kullanıcı: {my_user}
-            Rakip: {comp_user}
-            
-            Görevin:
-            1. Kullanıcıya 35-45 arası düşük bir puan ver.
-            2. Rakibe 75-85 arası yüksek bir puan ver.
-            3. Kullanıcıya "Sessiz Tokat" atacak 3 kısa, sert eleştiri yaz.
-            4. Asla "öneririm" deme. "Hatalısın" de.
-            
-            Çıktı Formatı (Aynen uy):
-            SKOR_SEN: [Sayı]
-            SKOR_RAKIP: [Sayı]
-            ELEŞTİRİ_1: [Kısa Cümle]
-            ELEŞTİRİ_2: [Kısa Cümle]
-            ELEŞTİRİ_3: [Kısa Cümle]
-            """
-            
+            # --- YAPAY ZEKA (GEMINI 1.5 FLASH) ---
             try:
+                # Modeli başlat
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                # Prompt (Talimat)
+                prompt = f"""
+                SEN ACIMASIZ BİR 'DAVRANIŞ DENETÇİSİSİN'. KOÇ DEĞİLSİN.
+                Kullanıcı: {my_user}
+                Rakip: {comp_user}
+                
+                Görevin:
+                1. Kullanıcıya 35-45 arası DÜŞÜK bir puan ver.
+                2. Rakibe 75-85 arası YÜKSEK bir puan ver.
+                3. Kullanıcıya "Sessiz Tokat" atacak 3 kısa, sert eleştiri yaz.
+                4. Asla "öneririm" deme. "Hatalısın" de.
+                
+                Çıktı Formatı (Aynen uy):
+                SKOR_SEN: [Sayı]
+                SKOR_RAKIP: [Sayı]
+                ELEŞTİRİ_1: [Kısa Cümle]
+                ELEŞTİRİ_2: [Kısa Cümle]
+                ELEŞTİRİ_3: [Kısa Cümle]
+                """
+                
                 response = model.generate_content(prompt)
                 text = response.text
                 
-                # Basit Parsing
+                # Sonucu Parçala (Parsing)
                 lines = text.split('\n')
-                score_me = "42"
-                score_comp = "78"
+                score_me = "42" # Varsayılan
+                score_comp = "78" # Varsayılan
                 critiques = []
                 
                 for line in lines:
                     if "SKOR_SEN:" in line: score_me = line.split(":")[1].strip()
                     if "SKOR_RAKIP:" in line: score_comp = line.split(":")[1].strip()
                     if "ELEŞTİRİ" in line: critiques.append(line.split(":")[1].strip())
-                
+
                 # --- SONUÇ EKRANI ---
                 st.markdown(f"""
                 <div class="audit-box">
@@ -149,32 +151,30 @@ if submit:
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.subheader("🛑 TESPİT EDİLEN DAVRANIŞ HATALARI")
+                st.subheader("🛑 TESPİT EDİLEN HATALAR")
                 if critiques:
                     for c in critiques:
                         st.error(f"❌ {c}")
                 else:
-                     st.error("❌ Video süreleri ihlal edildi.")
-                     st.error("❌ İlk 3 saniye kuralına uyulmadı.")
-                     st.error("❌ Paylaşım istikrarı bozuk.")
+                    st.error("❌ Video süresi disiplini ihlal edildi.")
+                    st.error("❌ İlk 3 saniye kuralına uyulmadı.")
 
-                # --- KİLİTLİ ALAN (MERAK) ---
+                # --- KİLİTLİ ALAN ---
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("### 🔒 GİZLİ DAVRANIŞ RAPORU")
                 st.info(f"Rakibinin uyguladığı 3 Gizli Strateji ve sana özel 72 saatlik disiplin görevi hazırlandı.")
                 
                 st.markdown(f'<div class="audit-box"><p class="blur-text">1. İlk 3 Saniye Kuralı: {comp_user} yüzünü gösterirken sen...</p></div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="audit-box"><p class="blur-text">2. Video Süresi: Rakip 7 saniyede keserken sen...</p></div>', unsafe_allow_html=True)
-
+                
                 # --- MAİL GÖNDERİMİ ---
                 email_status = karar_maili_gonder(email, my_user, comp_user, score_me, score_comp)
                 if email_status:
-                    st.success(f"📧 Karar bildirimi {email} adresine gönderildi.")
+                    st.success(f"📧 Denetim sonucu {email} adresine gönderildi.")
                 else:
-                    st.warning("Mail gönderilemedi (Şifre hatası olabilir), ama denetim ekranda tamamlandı.")
+                    st.warning("Denetim tamamlandı ancak mail gönderilemedi (Şifre kontrolü gerekebilir).")
                 
-                # --- SATIŞ BUTONU ---
+                # --- SATIŞ ---
                 st.link_button("🔓 RAPORU VE GÖREVLERİ AÇ (150 TL)", ODEME_LINKI)
-            
+
             except Exception as e:
                 st.error(f"Bir hata oluştu: {e}")
